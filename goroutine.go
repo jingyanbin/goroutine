@@ -29,10 +29,14 @@ func (m *GoState) Stopping() <-chan struct{} {
 	return m.stopping
 }
 
+func NewGoState() *GoState {
+	return &GoState{stopping: make(chan struct{}, 0)}
+}
+
 type goroutines struct {
 	counter int32
 	wg      sync.WaitGroup
-	state   GoState
+	state   *GoState
 }
 
 func (m *goroutines) add() {
@@ -67,7 +71,7 @@ func (m *goroutines) newGo(f func(), df func()) {
 	}()
 }
 
-func (m *goroutines) newGo2(f func(*GoState), df func(), gSta *GoState) {
+func (m *goroutines) newGoWith(f func(*GoState), df func(), gSta *GoState) {
 	m.add()
 	go func() {
 		defer m.done()
@@ -78,7 +82,7 @@ func (m *goroutines) newGo2(f func(*GoState), df func(), gSta *GoState) {
 			log.FatalF(stack)
 		})
 		if gSta == nil {
-			f(&m.state)
+			f(m.state)
 		} else {
 			f(gSta)
 		}
@@ -120,14 +124,14 @@ func (m *goroutines) waitF(f func(), second time.Duration) {
 	log.InfoF("goroutines stopped: %v/%v", m.count(), runtime.NumGoroutine())
 }
 
-var goMgr = &goroutines{}
+var goMgr = &goroutines{state: NewGoState()}
 
 func Go(f func()) {
 	goMgr.newGo(f, nil)
 }
 
-func Go2(f func(goState *GoState)) {
-	goMgr.newGo2(f, nil, nil)
+func GoWith(f func(goState *GoState)) {
+	goMgr.newGoWith(f, nil, nil)
 }
 
 func Count() int32 {
