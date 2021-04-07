@@ -171,6 +171,63 @@ func (m *GoWaitGroup) Wait() {
 	m.wg.Wait()
 }
 
+type WaitClose struct {
+	stopping    chan struct{}
+	initialized int32
+	closed      int32
+}
+
+func (m *WaitClose) init() {
+	if atomic.CompareAndSwapInt32(&m.initialized, 0, 1) {
+		m.stopping = make(chan struct{}, 0)
+	}
+}
+
+func (m *WaitClose) Close() {
+	m.init()
+	if atomic.CompareAndSwapInt32(&m.closed, 0, 1) {
+		close(m.stopping)
+	}
+}
+
+func (m *WaitClose) Wait() {
+	m.init()
+	<-m.stopping
+}
+
+const runningStandby = 0
+const runningStarted = 1
+const runningStopped = 2
+
+type RunningState struct {
+	running int32
+	wc      WaitClose
+}
+
+func (m *RunningState) Starting() bool {
+	if atomic.CompareAndSwapInt32(&m.running, runningStandby, runningStarted) {
+		return true
+	} else {
+		return false
+	}
+}
+
+func (m *RunningState) Stopping() bool {
+	if atomic.CompareAndSwapInt32(&m.running, runningStarted, runningStopped) {
+		return true
+	} else {
+		return false
+	}
+}
+
+func (m *RunningState) Close() {
+	m.wc.Close()
+}
+
+func (m *RunningState) Wait() {
+	m.wc.Wait()
+}
+
 //异常立即退出时调用
 func Exit() {
 	log.Wait()
