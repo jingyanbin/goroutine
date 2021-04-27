@@ -172,40 +172,65 @@ func (m *GoWaitGroup) Wait() {
 }
 
 type WaitClose struct {
-	stopping    chan struct{}
-	initialized int32
-	closed      int32
+	wg     sync.WaitGroup
+	once   sync.Once
+	closed int32
 }
 
-func (m *WaitClose) init() {
-	if atomic.CompareAndSwapInt32(&m.initialized, 0, 1) {
-		m.stopping = make(chan struct{}, 0)
-	}
+func (m *WaitClose) init() { m.wg.Add(1) }
+
+func (m *WaitClose) Closed() bool {
+	return atomic.LoadInt32(&m.closed) == 1
 }
 
-func (m *WaitClose) Close() {
-	m.init()
+func (m *WaitClose) Close() bool {
+	m.once.Do(m.init)
 	if atomic.CompareAndSwapInt32(&m.closed, 0, 1) {
-		close(m.stopping)
+		m.wg.Done()
+		return true
+	} else {
+		return false
 	}
 }
 
 func (m *WaitClose) Wait() {
-	m.init()
-	<-m.stopping
+	m.once.Do(m.init)
+	m.wg.Wait()
 }
 
-const runningStandby = 0
-const runningStarted = 1
-const runningStopped = 2
+var runningStateNames = []string{"Standby", "Started", "Stopped"}
+
+const RunningStandby = 0
+const RunningStarted = 1
+const RunningStopped = 2
 
 type RunningState struct {
 	running int32
-	wc      WaitClose
+}
+
+func (m *RunningState) String() string {
+	time.Now().Month()
+	return runningStateNames[m.State()]
+}
+
+func (m *RunningState) State() int32 {
+	return atomic.LoadInt32(&m.running)
+}
+
+func (m *RunningState) Standby() bool {
+	return m.State() == RunningStandby
+}
+
+func (m *RunningState) Started() bool {
+	return m.State() == RunningStarted
+}
+
+func (m *RunningState) Stopped() bool {
+	return m.State() == RunningStopped
 }
 
 func (m *RunningState) Starting() bool {
-	if atomic.CompareAndSwapInt32(&m.running, runningStandby, runningStarted) {
+	if atomic.CompareAndSwapInt32(&m.running, RunningStandby, RunningStarted) {
 		return true
 	} else {
 		return false
@@ -213,19 +238,11 @@ func (m *RunningState) Starting() bool {
 }
 
 func (m *RunningState) Stopping() bool {
-	if atomic.CompareAndSwapInt32(&m.running, runningStarted, runningStopped) {
+	if atomic.CompareAndSwapInt32(&m.running, RunningStarted, RunningStopped) {
 		return true
 	} else {
 		return false
 	}
-}
-
-func (m *RunningState) Close() {
-	m.wc.Close()
-}
-
-func (m *RunningState) Wait() {
-	m.wc.Wait()
 }
 
 //异常立即退出时调用
