@@ -209,7 +209,6 @@ type RunningState struct {
 }
 
 func (m *RunningState) String() string {
-	time.Now().Month()
 	return runningStateNames[m.State()]
 }
 
@@ -253,6 +252,7 @@ func Exit() {
 
 //执行完成正常退出时调用
 func Finalize() {
+	Services.Stop()
 	goMgr.close()
 	goMgr.wait()
 	log.Wait()
